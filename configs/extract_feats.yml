@@ -1,0 +1,22 @@
+extractor:
+  _target_: dualpm_features.wrappers.fuse.FuseWrapper
+  device: cuda:0
+
+args:
+  _target_: dualpm_features.extract.Config
+
+  test_root: [???] # path to images and masks to extract features from
+  results_info_root: /tmp
+  vis_out_root: null
+  features_out_root: ???
+  load_pca_path: libs/horse_male_pca.faiss
+
+  img_postfix_test: [_rgb.png]
+  mask_postfix_test: [_mask.png]
+  exp_name: test_fuse_extractor
+  name_depth: 0
+  use_pca: True
+  normalize_features: True
+  shuffle_data: True
+  batch_size: 12
+  n_images_vis: 100

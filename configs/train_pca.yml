@@ -1,0 +1,20 @@
+extractor:
+  _target_: canon_v2.wrappers.fuse.FuseWrapper
+  device: cuda:0
+
+args:
+  _target_: canon_v2.train_pca.Config
+  train_root:
+    [
+      ???
+    ]
+  exp_name: ???
+  img_postfix_train: [_rgb.png]
+  mask_postfix_train: [_mask.png]
+  name_depth: 1
+  pca_dim: 64
+  normalize_features: True
+  shuffle_data: True
+  batch_size: 12
+  load_mask: True
+  n_train_random_samples: 1000

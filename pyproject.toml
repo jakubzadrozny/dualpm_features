@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools >= 61.0"]       # add any imports required by setup.py here
+build-backend = "setuptools.build_meta"
+
+# for more info see https://packaging.python.org/en/latest/guides/writing-pyproject-toml/
+
+[project]
+name = "dualpm_features"
+authors = [
+    { name = "Tomas Jakab", email = "tomj@robots.ox.ac.uk" },
+    { name = "Ben Kaye", email = "kaye@robots.ox.ac.uk" }
+]
+dynamic = ["version"] # let setup.py set version
+requires-python = ">= 3.9"
+dependencies = [
+
+    "loguru>=0.5.3",
+    "faiss-cpu>=1.7.1",
+    "matplotlib>=3.4.2",
+    "tqdm>=4.61.2",
+    "gdown>=3.13.0",
+    "torch>=1.8.0,<2.0",
+    "ninja==1.10",
+    "timm==0.6.11",
+    "xformers==0.0.16",
+    "pillow==9.2",
+    "numpy>=1.21,<2.0",
+    "detectron2 @ git+https://github.com/facebookresearch/detectron2.git",
+    "mask2former @ git+https://github.com/facebookresearch/Mask2Former.git",
+    "odise @ git+https://github.com/NVlabs/ODISE.git",
+]
+
+
+[project.optional-dependencies]
+# add any here
+test = []
+
+[project.urls]
+repo = "https://github.com/DualPM/dualpm_features"
+
+[tool.ruff]
+target-version = "py39"
+lint.select = ["U", "I"]
