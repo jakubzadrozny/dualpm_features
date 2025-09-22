@@ -5,6 +5,8 @@ A wrapper for feature extractor from [**A Tale of Two Features**](https://github
 Used as a part of [**DualPM**](https://github.com/DualPM/DualPM_Paper) project.
 
 ## 🚀 Installation
+Note this requires a separate Python 3.9 environment because of Mask2Former and ODISE dependencies.
+If using conda: `conda create -n feats python=3.9 -y && conda activate feats`
 Setup environment following `install.sh`
 
 ## 📚 Usage
