@@ -5,18 +5,20 @@ extractor:
 args:
   _target_: dualpm_features.extract.Config
 
-  test_root: [???] # path to images and masks to extract features from
+  test_root: [dataset] # path to images and masks to extract features from
   results_info_root: /tmp
   vis_out_root: null
-  features_out_root: ???
+  features_out_root: dataset
   load_pca_path: libs/horse_male_pca.faiss
 
   img_postfix_test: [_rgb.png]
   mask_postfix_test: [_mask.png]
-  exp_name: test_fuse_extractor
+  exp_name: features
   name_depth: 0
   use_pca: True
   normalize_features: True
   shuffle_data: True
-  batch_size: 12
+  batch_size: 4
   n_images_vis: 100
+
+  debug_subset: False

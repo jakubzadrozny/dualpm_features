@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,34 +46,36 @@ def arrange(images):
     return image
 
 
+def fast_scan(root, postfix):
+    paths = []
+    idx = 0
+    with os.scandir(root) as entries:
+        for entry in entries:
+            if entry.is_file() and entry.name.endswith(postfix):            
+                if idx % 1000 == 0:
+                    print(idx, entry.path)
+                idx += 1
+                paths.append(Path(entry.path))
+    return sorted(paths)
+
+
 def create_dataset(
     root,
     debug_subset=False,
     n_random_samples=None,
     img_postfix="_rgb.jpg",
-    name_depth=None,
     mask_postfix=None,
     transform=None,
     mask_transform=None,
     samples_range=None,
 ):
-    img_paths = sorted(list(Path(root).rglob("*" + img_postfix)))
-    if mask_postfix is not None:
-        mask_names = sorted(list(Path(root).rglob("*" + mask_postfix)))
-        assert len(img_paths) == len(mask_names), (
-            f"Number of images ({len(img_paths)}) does not match "
-            f"number of masks ({len(mask_names)})"
-        )
-    else:
-        mask_names = None
-    img_names = [
-        str(Path(*img_path.parts[-(name_depth + 1) :])).removesuffix(img_postfix)
-        for img_path in img_paths
-    ]
+    img_root = Path(root) / "renders"
+    img_paths = fast_scan(str(img_root), img_postfix)
     dataset = FilesListDataset(
-        img_paths,
-        img_names,
-        masks_paths=mask_names,
+        root_dir=root,
+        files_list=img_paths,
+        img_postfix=img_postfix,
+        mask_postfix=mask_postfix,
         transform=transform,
         mask_transform=mask_transform,
     )
@@ -158,12 +161,13 @@ def extract_features(
     features_out_dir=None,
     vis_out_dir=None,
     log_features=False,
+    is_main_process=True,
 ):
     with torch.no_grad():
         all_features = []
         all_masks = []
         i = 0
-        for batch in tqdm(dataloader, total=len(dataloader)):
+        for batch in tqdm(dataloader, total=len(dataloader), disable=not is_main_process):
             unnormalized_image = batch["unnormalized_image"]
             img_name = batch["img_name"]
             mask = batch.get("mask")
@@ -172,14 +176,15 @@ def extract_features(
             b, h, w, c = features.shape
             features = rearrange(features, "b h w c -> (b h w) c")
 
-            if log_features:
-                if mask is not None:
-                    mask_for_log = rearrange(mask, "b c h w -> (b h w) c")
-                    all_masks.append(mask_for_log)
-
             features = features.cpu().numpy()
             if args.normalize_features:
                 features = features / np.linalg.norm(features, axis=-1, keepdims=True)
+
+            if log_features:
+                all_features.append(features)
+                if mask is not None:
+                    mask_for_log = rearrange(mask, "b c h w -> (b h w) c")
+                    all_masks.append(mask_for_log)
 
             # export image features and save visuals
             if pca_mat is not None:
@@ -225,14 +230,17 @@ def extract_features(
 class FilesListDataset(torch.utils.data.Dataset):
     def __init__(
         self,
+        root_dir,
         files_list,
-        sample_names,
-        masks_paths=None,
+        img_postfix,
+        mask_postfix,
         transform=None,
         mask_transform=None,
     ):
         self.files_list = files_list
-        self.masks_paths = masks_paths
+        self.img_postfix = img_postfix
+        self.mask_root = Path(root_dir) / "masks"
+        self.mask_postfix = mask_postfix
         if transform is None:
             transform = {
                 "dino_input": transforms.Compose([transforms.ToTensor()]),
@@ -241,33 +249,39 @@ class FilesListDataset(torch.utils.data.Dataset):
             }
         self.transform = transform
         self.mask_transform = mask_transform
-        self.sample_names = sample_names
 
     def __len__(self):
         return len(self.files_list)
 
     def __getitem__(self, idx):
         img_path = self.files_list[idx]
+        img_name = img_path.name.removesuffix(self.img_postfix)
+        
         try:
             img = Image.open(img_path)
+            assert len(img.getbands()) == 3
         except PIL.UnidentifiedImageError as e:
             logger.warning(f"Error: {e}")
             img = Image.new("RGB", (256, 256))
         transformed_img = {}
         for key, transform in self.transform.items():
             transformed_img[key] = transform(img)
+            if key == "dino_input":
+                assert transformed_img[key].shape == (3, 840, 840)
+            else:
+                assert transformed_img[key].shape == (3, 960, 960)
+
         result = {
             **transformed_img,
             "img_path": str(img_path),
-            "img_name": self.sample_names[idx],
+            "img_name": img_name,
         }
 
-        if self.masks_paths is not None:
-            mask_path = self.masks_paths[idx]
-            mask = Image.open(mask_path)
-            if self.mask_transform is not None:
-                mask_transformed = self.mask_transform(mask)[:1]
-                result["mask"] = mask_transformed
+        mask_path = self.mask_root / (img_name + self.mask_postfix)
+        mask = Image.open(mask_path)
+        if self.mask_transform is not None:
+            mask_transformed = self.mask_transform(mask)[:1]
+            result["mask"] = mask_transformed
 
         return result
 
@@ -292,12 +306,11 @@ class Config:
     test_samples_range: Optional[List[int]] = None
 
 
-def run(extractor: ExtractorWrapper, args: Config):
+def run(extractor: ExtractorWrapper, args: Config, rank: int = 0, world_size: int = 1):
     # TODO: clean up the args handling
     exp_name = args.exp_name
     batch_size = args.batch_size
     features_out_dir = Path(args.features_out_root) / exp_name
-    vis_out_dir = Path(args.vis_out_root) / exp_name
 
     # first check if we do PCA
     if args.use_pca:
@@ -310,28 +323,49 @@ def run(extractor: ExtractorWrapper, args: Config):
     else:
         pca_mat = None
 
-    # extract and save features
-    test_dataloader = create_dataloader(
+    logger.info(f"Create dataset")
+    dataset = create_dataset_from_multiple(
         args.test_root,
-        batch_size,
         args.img_postfix_test,
         mask_postfix=args.mask_postfix_test,
         debug_subset=args.debug_subset,
-        shuffle=args.shuffle_data,
         transform=extractor.transform,
-        name_depth=args.name_depth,
         samples_range=args.test_samples_range,
     )
+    ind = list(range(len(dataset)))
 
-    logger.info("Extracting features")
-    extract_features(
-        args,
-        test_dataloader,
-        extractor,
-        pca_mat=pca_mat,
-        features_out_dir=features_out_dir,
-        vis_out_dir=vis_out_dir,
-    )
+    if world_size > 1:
+        chunk_size = math.ceil(len(ind) / world_size)
+        start = rank * chunk_size
+        end = min(start + chunk_size, len(ind))
+        local_ind = ind[start:end]
+
+        if len(local_ind) > 0:
+            local_dataset = torch.utils.data.Subset(dataset, local_ind)
+            dataloader = DataLoader(local_dataset, batch_size=batch_size, shuffle=args.shuffle_data, num_workers=6)
+
+            logger.info(f"Rank {rank}: Extracting features")
+            extract_features(
+                args,
+                dataloader,
+                extractor,
+                pca_mat=pca_mat,
+                features_out_dir=features_out_dir,
+                is_main_process=(rank == 0),
+            )
+    else:
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=args.shuffle_data, num_workers=6)
+
+        logger.info("Extracting features")
+        extract_features(
+            args,
+            dataloader,
+            extractor,
+            pca_mat=pca_mat,
+            features_out_dir=features_out_dir,
+            is_main_process=True,
+        )
+
     logger.info("Extracting features done")
 
 

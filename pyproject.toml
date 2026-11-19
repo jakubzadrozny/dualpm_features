@@ -25,9 +25,6 @@ dependencies = [
     "xformers==0.0.16",
     "pillow==9.2",
     "numpy>=1.21,<2.0",
-    "detectron2 @ git+https://github.com/facebookresearch/detectron2.git",
-    "mask2former @ git+https://github.com/facebookresearch/Mask2Former.git",
-    "odise @ git+https://github.com/NVlabs/ODISE.git",
 ]
 
 

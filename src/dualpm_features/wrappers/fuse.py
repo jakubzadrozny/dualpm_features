@@ -1,3 +1,5 @@
+from functools import partial
+
 import torch
 from einops import rearrange
 from torchvision import transforms
@@ -29,6 +31,7 @@ class FuseWrapper(ExtractorWrapper):
         self.dino_extractor = ViTExtractor(device=self.device)
 
         self.sd_model, self.sd_augmentation = load_model()
+        self.sd_model.to(self.device)
 
         dino_patch_size = self.dino_extractor.model.patch_embed.patch_size[0]
         dino_stride = self.dino_extractor.model.patch_embed.proj.stride[0]
@@ -42,13 +45,13 @@ class FuseWrapper(ExtractorWrapper):
 
         sd_image_transform = transforms.Compose(
             [
-                lambda x: resize(x, self.sd_image_size, resize=True, to_pil=True),
+                partial(resize, target_res=self.sd_image_size, resize=True, to_pil=True),
                 transforms.ToTensor(),
             ]
         )
         dino_image_transform = transforms.Compose(
             [
-                lambda x: resize(x, self.dino_image_size, resize=True, to_pil=True),
+                partial(resize, target_res=self.dino_image_size, resize=True, to_pil=True),
                 transforms.ToTensor(),
             ]
         )
