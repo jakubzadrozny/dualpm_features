@@ -70,6 +70,8 @@ def create_dataset(
     samples_range=None,
 ):
     img_root = Path(root) / "renders"
+    if not img_root.is_dir():
+        img_root = Path(root) / "images"
     img_paths = fast_scan(str(img_root), img_postfix)
     dataset = FilesListDataset(
         root_dir=root,
@@ -94,8 +96,17 @@ def create_dataset(
 def create_dataset_from_multiple(roots, img_postfix, mask_postfix=None, **kwargs):
     if isinstance(img_postfix, str):
         img_postfix = len(roots) * [img_postfix]
+    elif len(img_postfix) == 1:
+        img_postfix = len(roots) * list(img_postfix)
     if isinstance(mask_postfix, str) or mask_postfix is None:
         mask_postfix = len(roots) * [mask_postfix]
+    elif len(mask_postfix) == 1:
+        mask_postfix = len(roots) * list(mask_postfix)
+    if not (len(roots) == len(img_postfix) == len(mask_postfix)):
+        raise ValueError(
+            f"Length mismatch: roots ({len(roots)}), img_postfix ({len(img_postfix)}), "
+            f"mask_postfix ({len(mask_postfix)})"
+        )
     datasets = []
     for root, img_postfix_, mask_postfix_ in zip(roots, img_postfix, mask_postfix):
         dataset = create_dataset(
@@ -103,13 +114,6 @@ def create_dataset_from_multiple(roots, img_postfix, mask_postfix=None, **kwargs
         )
         datasets.append(dataset)
     return torch.utils.data.ConcatDataset(datasets)
-
-
-def create_dataloader(
-    root, batch_size, img_postfix, mask_postfix=None, shuffle=False, **kwargs
-):
-    dataset = create_dataset_from_multiple(root, img_postfix, mask_postfix, **kwargs)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=0)
 
 
 def save_features(
@@ -277,11 +281,12 @@ class FilesListDataset(torch.utils.data.Dataset):
             "img_name": img_name,
         }
 
-        mask_path = self.mask_root / (img_name + self.mask_postfix)
-        mask = Image.open(mask_path)
-        if self.mask_transform is not None:
-            mask_transformed = self.mask_transform(mask)[:1]
-            result["mask"] = mask_transformed
+        if self.mask_postfix is not None:
+            mask_path = self.mask_root / (img_name + self.mask_postfix)
+            mask = Image.open(mask_path)
+            if self.mask_transform is not None:
+                mask_transformed = self.mask_transform(mask)[:1]
+                result["mask"] = mask_transformed
 
         return result
 
@@ -293,7 +298,6 @@ class Config:
     results_info_root: str
     features_out_root: Optional[str] = None
     vis_out_root: Optional[str] = None
-    name_depth: Optional[int] = 0
     load_pca_path: Optional[str] = None
     img_postfix_test: List[str] = field(default_factory=lambda: ["_rgb.png"])
     mask_postfix_test: Optional[List[str]] = None
@@ -342,7 +346,13 @@ def run(extractor: ExtractorWrapper, args: Config, rank: int = 0, world_size: in
 
         if len(local_ind) > 0:
             local_dataset = torch.utils.data.Subset(dataset, local_ind)
-            dataloader = DataLoader(local_dataset, batch_size=batch_size, shuffle=args.shuffle_data, num_workers=6)
+            dataloader = DataLoader(
+                local_dataset,
+                batch_size=batch_size,
+                shuffle=args.shuffle_data,
+                num_workers=2,
+                persistent_workers=True,
+            )
 
             logger.info(f"Rank {rank}: Extracting features")
             extract_features(
@@ -354,7 +364,13 @@ def run(extractor: ExtractorWrapper, args: Config, rank: int = 0, world_size: in
                 is_main_process=(rank == 0),
             )
     else:
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=args.shuffle_data, num_workers=6)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=args.shuffle_data,
+            num_workers=2,
+            persistent_workers=True,
+        )
 
         logger.info("Extracting features")
         extract_features(

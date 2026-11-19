@@ -9,12 +9,11 @@ args:
   results_info_root: /tmp
   vis_out_root: null
   features_out_root: dataset
-  load_pca_path: libs/horse_male_pca.faiss
+  load_pca_path: ???
 
   img_postfix_test: [_rgb.png]
   mask_postfix_test: [_mask.png]
   exp_name: features
-  name_depth: 0
   use_pca: True
   normalize_features: True
   shuffle_data: True
