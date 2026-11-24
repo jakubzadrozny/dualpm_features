@@ -314,7 +314,15 @@ def run(extractor: ExtractorWrapper, args: Config, rank: int = 0, world_size: in
     # TODO: clean up the args handling
     exp_name = args.exp_name
     batch_size = args.batch_size
-    features_out_dir = Path(args.features_out_root) / exp_name
+    if args.features_out_root is None:
+        if len(args.test_root) != 1:
+            raise ValueError(
+                "`features_out_root` must be specified when `test_root` does not have exactly 1 entry."
+            )
+        features_out_root = args.test_root[0]
+    else:
+        features_out_root = args.features_out_root
+    features_out_dir = Path(features_out_root) / exp_name
 
     # first check if we do PCA
     if args.use_pca:

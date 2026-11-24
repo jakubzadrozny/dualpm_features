@@ -8,7 +8,7 @@ args:
   test_root: [dataset] # path to images and masks to extract features from
   results_info_root: /tmp
   vis_out_root: null
-  features_out_root: dataset
+  features_out_root: null
   load_pca_path: ???
 
   img_postfix_test: [_rgb.png]
